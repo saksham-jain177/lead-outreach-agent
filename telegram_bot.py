@@ -8,6 +8,7 @@ import logging
 import urllib.request
 
 import agent
+import config
 from config import cfg
 
 log = logging.getLogger("agent.telegram")
