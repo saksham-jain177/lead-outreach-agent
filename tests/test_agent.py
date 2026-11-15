@@ -288,3 +288,58 @@ def test_process_followups_sends_due_rows(tmp_path, monkeypatch):
 
 def test_followup_date_is_future():
     assert outreach.followup_date() > dt.date.today().isoformat()
+
+
+# ---------- telegram authorization ----------
+
+def test_resolve_allowed_user_from_env(monkeypatch):
+    import telegram_bot
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "897442810")
+    assert telegram_bot._resolve_allowed_user() == 897442810
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "")
+    assert telegram_bot._resolve_allowed_user() is None
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "not-a-number")
+    assert telegram_bot._resolve_allowed_user() is None
+
+
+def test_listener_ignores_unauthorized_and_answers_authorized(monkeypatch):
+    import telegram_bot
+
+    class FakeMsg(dict):
+        pass
+
+    def make_update(uid, chat_id, text):
+        return {"update_id": uid, "message": {"chat": {"id": chat_id}, "text": text}}
+
+    updates = [
+        make_update(1, 999999, "Find event leads for Zomato in Gurgaon"),   # unauthorized
+        make_update(2, 897442810, "Find event leads for Zoho in Chennai"),  # authorized
+        make_update(3, 897442810, "hello"),                                 # authorized, bad command
+    ]
+    sent = []
+    ran = []
+
+    def fake_api(token, method, payload=None, timeout=60):
+        if method == "getUpdates":
+            if not updates:
+                raise KeyboardInterrupt  # stop the poll loop when drained
+            batch, updates[:] = updates[:1], updates[1:]
+            return {"ok": True, "result": batch}
+        if method == "sendMessage":
+            sent.append(payload)
+        return {"ok": True}
+
+    monkeypatch.setattr(telegram_bot, "_api", fake_api)
+    monkeypatch.setattr(telegram_bot.agent, "run_pipeline",
+                        lambda *a, **k: ran.append(a) or {"lead": {"name": "X", "role": "CEO"},
+                                                          "pitch": "p", "sheet": "appended",
+                                                          "outreach": "sent"})
+
+    with pytest.raises(KeyboardInterrupt):
+        telegram_bot.poll_forever(allowed_user_id=897442810)
+
+    assert len(ran) == 1 and ran[0] == ("Zoho", "Chennai")  # only authorized chat ran
+    acks = [s for s in sent if s["text"] == "On it — running enrichment..."]
+    assert len(acks) == 1 and acks[0]["chat_id"] == 897442810
+    help_msgs = [s for s in sent if "Find event leads for" in s["text"] and "Send:" in s["text"]]
+    assert len(help_msgs) == 1  # only the authorized bad-command got the help reply
