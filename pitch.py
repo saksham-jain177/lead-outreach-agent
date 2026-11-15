@@ -26,9 +26,20 @@ Keep each line under 25 words. Plain sentences, one per line."""
 
 
 def _valid_pitch(text):
-    """Contract check: exactly 3 non-empty lines, each <= 120 chars."""
+    """Contract check: exactly 3 non-empty lines, each 30-120 chars, and at
+    least one line ending with sentence punctuation.
+
+    The min-length + punctuation rules catch truncated final answers from
+    token-starved reasoning models (e.g. a 3rd line of literally "Would").
+    """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return len(lines) == 3 and all(len(ln) <= 120 for ln in lines), lines
+    if len(lines) != 3:
+        return False, lines
+    if not all(30 <= len(ln) <= 120 for ln in lines):
+        return False, lines
+    if not any(ln.endswith((".", "!", "?")) for ln in lines):
+        return False, lines
+    return True, lines
 
 
 def write_pitch(company, city, lead):
@@ -45,9 +56,9 @@ def write_pitch(company, city, lead):
         city=city,
         event_context=event_context,
     )
-    # One retry on contract failure (line count / length), per the output contract
+    # One retry on contract failure (line count / length / truncation), per the output contract
     for attempt in (1, 2):
-        text = llm.chat(prompt, system=SYSTEM, temperature=0.2, max_tokens=300)
+        text = llm.chat(prompt, system=SYSTEM, temperature=0.2, max_tokens=400)
         if not text:
             continue
         ok, lines = _valid_pitch(text)

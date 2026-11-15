@@ -95,26 +95,53 @@ def test_plausible_email_rejects_short_local_parts():
 
 # ---------- pitch (mocked LLM, strict contract) ----------
 
+VALID_3_LINES = (
+    "Hi Deepinder, we noticed Zomato's event activity in Gurgaon this quarter.\n"
+    "We connect hosts with vetted event planners, DJs, and crew for events.\n"
+    "Would you be open to a 15-minute call this week to explore a fit?"
+)
+
+
 def test_write_pitch_three_lines_from_llm(monkeypatch):
-    monkeypatch.setattr("llm.chat", lambda p, system=None, temperature=0.2, max_tokens=300:
-                        "\nLine one about Zomato.\nLine two about vetted crews.\nLine three CTA.")
+    monkeypatch.setattr("llm.chat", lambda p, system=None, temperature=0.2, max_tokens=400:
+                        VALID_3_LINES)
     out = pitch.write_pitch("Zomato", "Gurgaon", {"name": "Deepinder Goyal", "role": "Founder & CEO", "event_signals": []})
     assert len(out.splitlines()) == 3
+    assert "Zomato" in out
 
 
 def test_write_pitch_retries_on_bad_shape_then_succeeds(monkeypatch):
     calls = {"n": 0}
-    def fake_chat(prompt, system=None, temperature=0.2, max_tokens=300):
+    def fake_chat(prompt, system=None, temperature=0.2, max_tokens=400):
         calls["n"] += 1
-        return "only one line" if calls["n"] == 1 else "\n".join(
-            ["a", "b", "c"])
+        return "only one line" if calls["n"] == 1 else VALID_3_LINES
     monkeypatch.setattr("llm.chat", fake_chat)
     out = pitch.write_pitch("Zomato", "Gurgaon", {"name": "X", "role": "CEO", "event_signals": []})
     assert calls["n"] == 2 and len(out.splitlines()) == 3
+    assert "vetted event planners" in out  # the retry's LLM lines, not the fallback
+
+
+def test_write_pitch_truncated_third_line_never_passes(monkeypatch):
+    # Regression (rehearsal finding): a token-starved model returned a 3rd line
+    # of literally "Would" — must fail validation, retry, then fall back.
+    truncated = (
+        "Hi Deepinder, we noticed Zomato's event activity in Gurgaon this quarter.\n"
+        "We connect hosts with vetted event planners, DJs, and crew for events.\n"
+        "Would"
+    )
+    calls = {"n": 0}
+    def fake_chat(prompt, system=None, temperature=0.2, max_tokens=400):
+        calls["n"] += 1
+        return truncated  # truncated on both attempts
+    monkeypatch.setattr("llm.chat", fake_chat)
+    out = pitch.write_pitch("Zomato", "Gurgaon", {"name": "Deepinder Goyal", "role": "Founder & CEO", "event_signals": []})
+    assert calls["n"] == 2
+    assert "Would" not in out.splitlines()  # truncated line never surfaces
+    assert len(out.splitlines()) == 3 and "Zomato" in out  # deterministic fallback
 
 
 def test_write_pitch_fallback_when_llm_fails(monkeypatch):
-    monkeypatch.setattr("llm.chat", lambda p, system=None, temperature=0.2, max_tokens=300: None)
+    monkeypatch.setattr("llm.chat", lambda p, system=None, temperature=0.2, max_tokens=400: None)
     out = pitch.write_pitch("Zomato", "Gurgaon", {"name": "Deepinder Goyal", "role": "Founder & CEO", "event_signals": []})
     assert len(out.splitlines()) == 3
     assert "Zomato" in out
@@ -124,6 +151,14 @@ def test_pitch_rejects_overlong_lines():
     long_line = "x" * 130
     ok, _ = pitch._valid_pitch(f"{long_line}\nshort\nshort")
     assert ok is False
+
+
+def test_pitch_rejects_undersized_and_unpunctuated_lines():
+    ok, _ = pitch._valid_pitch("Would\n" + "y" * 40 + "\n" + "z" * 40)
+    assert ok is False  # 1-word line fails the 30-char floor
+    no_punct = "\n".join(["a" * 40, "b" * 40, "c" * 40])
+    ok, _ = pitch._valid_pitch(no_punct)
+    assert ok is False  # no sentence punctuation anywhere
 
 
 # ---------- strict-JSON lead extraction contract ----------
