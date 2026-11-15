@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+cache.json
+ATLAS_SCRATCHPAD.md
+*.mp4
+*.mkv
