@@ -80,7 +80,10 @@ def _save_cache(cache):
 
 
 def _ddg_search(query, max_results=6):
-    from duckduckgo_search import DDGS
+    try:
+        from ddgs import DDGS  # maintained rename of duckduckgo_search
+    except ImportError:
+        from duckduckgo_search import DDGS
     with DDGS() as ddgs:
         return [
             {"title": r.get("title", ""), "body": r.get("body", ""), "href": r.get("href", "")}
