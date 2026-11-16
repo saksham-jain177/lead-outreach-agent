@@ -329,8 +329,8 @@ def test_followup_date_is_future():
 
 def test_resolve_allowed_user_from_env(monkeypatch):
     import telegram_bot
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "897442810")
-    assert telegram_bot._resolve_allowed_user() == 897442810
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "987654321")
+    assert telegram_bot._resolve_allowed_user() == 987654321
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "")
     assert telegram_bot._resolve_allowed_user() is None
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "not-a-number")
@@ -348,8 +348,8 @@ def test_listener_ignores_unauthorized_and_answers_authorized(monkeypatch):
 
     updates = [
         make_update(1, 999999, "Find event leads for Zomato in Gurgaon"),   # unauthorized
-        make_update(2, 897442810, "Find event leads for Zoho in Chennai"),  # authorized
-        make_update(3, 897442810, "hello"),                                 # authorized, bad command
+        make_update(2, 987654321, "Find event leads for Zoho in Chennai"),  # authorized
+        make_update(3, 987654321, "hello"),                                 # authorized, bad command
     ]
     sent = []
     ran = []
@@ -371,10 +371,10 @@ def test_listener_ignores_unauthorized_and_answers_authorized(monkeypatch):
                                                           "outreach": "sent"})
 
     with pytest.raises(KeyboardInterrupt):
-        telegram_bot.poll_forever(allowed_user_id=897442810)
+        telegram_bot.poll_forever(allowed_user_id=987654321)
 
     assert len(ran) == 1 and ran[0] == ("Zoho", "Chennai")  # only authorized chat ran
     acks = [s for s in sent if s["text"] == "On it — running enrichment..."]
-    assert len(acks) == 1 and acks[0]["chat_id"] == 897442810
+    assert len(acks) == 1 and acks[0]["chat_id"] == 987654321
     help_msgs = [s for s in sent if "Find event leads for" in s["text"] and "Send:" in s["text"]]
     assert len(help_msgs) == 1  # only the authorized bad-command got the help reply
